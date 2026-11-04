@@ -8,7 +8,7 @@ With the exception of Resurreccion Toolkit, these tools were recovered from arch
 
 - **Xandreale** — Creator of [**BSIgnition**](https://archive.vg-resource.com/thread-21407-post-504639.html#pid504639), a tool developed in 2011 using FBSL (Freestyle BASIC Scripting Language).
 - **neff10** — Creator of a tutorial explaining how to extract `.SPK` models and textures using **BSIgnition**.
-- **akderebur** — Creator of [**BSRViewer**](https://github.com/akderebur), a tool capable of reading 3D models, bones, and animations, playing animations back, and exporting models and animations to `.NUX` format for use with Noesis.
+- [**akderebur**]((https://github.com/akderebur)) — Creator of [**BSRViewer**](https://web.archive.org/web/20210125003805/https://forum.xentax.com/viewtopic.php?f=16&t=22570), a tool capable of reading 3D models, bones, and animations, playing animations back, and exporting models and animations to `.NUX` format for use with Noesis.
 - [**SockNastre**](https://github.com/SockNastre) — Creator of [**Resurreccion Toolkit**](https://github.com/SockNastre/Resurreccion-Toolkit), who provided valuable information on modifying battle characters.
 
 ## Brief Guide
