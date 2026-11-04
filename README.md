@@ -1,6 +1,7 @@
 # Bleach: Soul Resurrección Tools
 
 A collection of open-source tools for modifying the PlayStation 3 game *Bleach: Soul Resurrección*, developed by the community. I should not take credit.
+
 With the exception of Resurreccion Toolkit, these tools were recovered from archived forums that are no longer accessible. The files have only been tested with the North American version of the game (BLUS30769).
 
 ## Credits
@@ -21,3 +22,12 @@ Character files with the `btl` prefix, located in the `sndEnglish` and `sndJapan
 **Example:** To modify Bankai Ichigo's in-game texture, you must edit both `spk/sndEnglish/btlIchigoImg.spk` and `spk/sndJapanese/btlIchigoImg.spk`.
 
 Textures use the DDS BC1/DXT1 format with mipmaps (10 levels, which is the default setting in GIMP and Paint.NET). When modifying these textures, the final exported file must be exactly the same size as the corresponding original file.
+
+Extract the desired `.SPK` file using `spk_extractor.py`, modify the target texture while preserving its original format, dimensions, and file size, and use `spk_inject.py` (the .dds textures must be in the same folder) to replace the original texture with the modified one.
+
+### Usage
+
+```bash
+python spk_extractor.py btlIchigoImg.spk
+python spk_inject.py btlIchigoImg.spk
+```
