@@ -2,7 +2,7 @@
 
 A collection of open-source tools for modifying the PlayStation 3 game *Bleach: Soul Resurrección*, developed by the community. I should not take credit.
 
-With the exception of Resurreccion Toolkit, these tools were recovered from archived forums that are no longer accessible. The files have only been tested with the North American version of the game (BLUS30769).
+With the exception of Resurreccion Toolkit, these tools were recovered from archived forums that are no longer accessible. The files have only been tested with the American version of the game (BLUS30769).
 
 ## Credits
 
