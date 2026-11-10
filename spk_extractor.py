@@ -591,6 +591,102 @@ def parse_dds(raw: bytes) -> Tuple[int, int, str, bytes]:
     return width, height, fourcc, raw[128:]
 
 
+
+# --- Format 133 (0x85): ARGB8888 uncompressed, swizzled (Morton order) ---
+
+FMT_ARGB8888_SWIZZLED = 133
+
+
+def _morton_indices(width: int, height: int):
+    """Linear pixel position -> index in the PS3 swizzled (Morton) layout."""
+    def spread(v: int, bits: int) -> int:
+        r = 0
+        for i in range(bits):
+            r |= ((v >> i) & 1) << (2 * i)
+        return r
+    bw, bh = width.bit_length() - 1, height.bit_length() - 1
+    if (1 << bw) != width or (1 << bh) != height:
+        raise ValueError("swizzle requires power-of-two dimensions")
+    bits = min(bw, bh)
+    out = []
+    for y in range(height):
+        for x in range(width):
+            lo = spread(x & ((1 << bits) - 1), bits) | (spread(y & ((1 << bits) - 1), bits) << 1)
+            # the larger dimension continues linearly above the interleaved bits
+            hi = ((x >> bits) | (y >> bits)) << (2 * bits)
+            out.append(lo | hi)
+    return out
+
+
+def argb_swizzled_to_bgra(raw: bytes, width: int, height: int) -> bytes:
+    """PS3 swizzled big-endian ARGB -> linear BGRA bytes (DDS A8R8G8B8)."""
+    idx = _morton_indices(width, height)
+    out = bytearray(width * height * 4)
+    for i, m in enumerate(idx):
+        a, r, g, b = raw[m * 4:m * 4 + 4]
+        out[i * 4:i * 4 + 4] = bytes((b, g, r, a))
+    return bytes(out)
+
+
+def bgra_to_argb_swizzled(bgra: bytes, width: int, height: int) -> bytes:
+    """Inverse of `argb_swizzled_to_bgra` (use this in the injector)."""
+    idx = _morton_indices(width, height)
+    out = bytearray(width * height * 4)
+    for i, m in enumerate(idx):
+        b, g, r, a = bgra[i * 4:i * 4 + 4]
+        out[m * 4:m * 4 + 4] = bytes((a, r, g, b))
+    return bytes(out)
+
+
+def build_dds_header_argb(width: int, height: int) -> bytes:
+    """128-byte DDS header for uncompressed A8R8G8B8 (no mipmaps)."""
+    header = struct.pack("<4s7I44x", b"DDS ", 124, 0x1007 | 0x8, height, width,
+                         width * 4, 0, 1)
+    pixel_format = struct.pack("<8I", 32, 0x41, 0, 32,
+                               0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)
+    caps = struct.pack("<5I", 0x1000, 0, 0, 0, 0)
+    return header + pixel_format + caps
+
+
+
+def parse_dds_argb(raw: bytes) -> Tuple[int, int, bytes]:
+    """
+    Reads an UNCOMPRESSED .dds (24 or 32 bits, any channel mask order) and
+    returns (width, height, bgra_pixels) for the first mip level only.
+    """
+    if raw[:4] != b"DDS " or len(raw) < 128:
+        raise ValueError("not a DDS file")
+    height, width = struct.unpack_from("<II", raw, 12)
+    pf_flags, fourcc = struct.unpack_from("<I4s", raw, 80)
+    bitcount, rmask, gmask, bmask, amask = struct.unpack_from("<5I", raw, 88)
+    if pf_flags & 0x4:
+        raise ValueError(f"compressed DDS ({fourcc.decode('ascii', 'replace')}); "
+                         "this texture needs an uncompressed A8R8G8B8 DDS")
+    if bitcount not in (24, 32):
+        raise ValueError(f"unsupported DDS bit count: {bitcount}")
+    bpp = bitcount // 8
+    need = width * height * bpp
+    if len(raw) < 128 + need:
+        raise ValueError("DDS pixel data is truncated")
+    pix = raw[128:128 + need]  # extra mip levels (if any) are ignored
+
+    if bpp == 4 and (rmask, gmask, bmask, amask) == (0xFF0000, 0xFF00, 0xFF, 0xFF000000):
+        return width, height, pix  # already BGRA
+
+    def shift(mask):
+        return (mask & -mask).bit_length() - 1 if mask else 0
+
+    sr, sg, sb, sa = shift(rmask), shift(gmask), shift(bmask), shift(amask)
+    out = bytearray(width * height * 4)
+    for i in range(width * height):
+        v = int.from_bytes(pix[i * bpp:(i + 1) * bpp], "little")
+        out[i * 4] = (v & bmask) >> sb
+        out[i * 4 + 1] = (v & gmask) >> sg
+        out[i * 4 + 2] = (v & rmask) >> sr
+        out[i * 4 + 3] = ((v & amask) >> sa) if amask else 255
+    return width, height, bytes(out)
+
+
 def export_textures(data: bytes, stem: str) -> None:
     """Extracts textures from an "Img.spk"/"Tex.spk" file and saves them as .dds."""
     texture_number = 0  # global counter used in .dds filenames
@@ -599,6 +695,16 @@ def export_textures(data: bytes, stem: str) -> None:
         print(f"Embedded archive at 0x{start:X}: {len(infos)} texture(s)")
         for info in infos:
             texture_number += 1
+            if info.fmt == FMT_ARGB8888_SWIZZLED:
+                # Uncompressed texture: saved as PNG (needs Pillow: pip install pillow)
+                from PIL import Image
+                raw = data[start + info.offset:start + info.offset + info.size]
+                bgra = argb_swizzled_to_bgra(raw, info.width, info.height)
+                path = f"{stem}_{texture_number}.png"
+                Image.frombytes("RGBA", (info.width, info.height), bgra, "raw", "BGRA").save(path)
+                print(f"  Written: {path}  (id {info.tex_id}, fmt 133 -> "
+                      f"ARGB8888 {info.width}x{info.height}, swizzled, PNG)")
+                continue
             if info.fmt not in TEXTURE_FORMATS:
                 print(f"  [SKIPPED] #{texture_number}: formato unknown {info.fmt}")
                 continue

@@ -21,7 +21,8 @@ Workflow
 Rules for edited .dds files (otherwise the script will reject the texture)
 ------------------------------------------------------------
 - Same width and height.
-- Same compression format (DXT1, DXT3, or DXT5).
+- Same compression format (DXT1, DXT3, or DXT5). Format 133 textures are
+  uncompressed and are extracted/edited as PNG (name_N.png, needs Pillow).
 - Must include mipmaps (the same number as the original), so the data size
   is IDENTICAL to the original.
 - Legacy format (without a "DX10" header).
@@ -40,7 +41,10 @@ import os
 import sys
 
 from spk_extractor import (
+    FMT_ARGB8888_SWIZZLED,
     TEXTURE_FORMATS,
+    bgra_to_argb_swizzled,
+    parse_dds_argb,
     find_texture_archives,
     parse_dds,
     repack_texture,
@@ -59,6 +63,41 @@ def inject(spk_path: str, dds_dir: str, out_path: str) -> None:
         for info in infos:
             texture_number += 1
             dds_path = os.path.join(dds_dir, f"{stem}_{texture_number}.dds")
+            png_path = os.path.join(dds_dir, f"{stem}_{texture_number}.png")
+
+            if info.fmt == FMT_ARGB8888_SWIZZLED:
+                # Uncompressed texture: edited as PNG (DDS A8R8G8B8 also accepted)
+                src = png_path if os.path.exists(png_path) else dds_path
+                if not os.path.exists(src):
+                    continue
+                label = f"#{texture_number} ({os.path.basename(src)})"
+                try:
+                    if src == png_path:
+                        from PIL import Image
+                        im = Image.open(src).convert("RGBA")
+                        width, height = im.size
+                        bgra = im.tobytes("raw", "BGRA")
+                    else:
+                        with open(src, "rb") as f:
+                            width, height, bgra = parse_dds_argb(f.read())
+                except Exception as err:
+                    print(f"[SKIPPED] {label}: {err}")
+                    continue
+                if (width, height) != (info.width, info.height):
+                    print(f"[SKIPPED] {label}: size {width}x{height}, expected {info.width}x{info.height}")
+                    continue
+                region = slice(start + info.offset, start + info.offset + info.size)
+                new_raw = bgra_to_argb_swizzled(bgra, width, height)
+                if len(new_raw) != info.size:
+                    print(f"[SKIPPED] {label}: {len(new_raw)} bytes, expected {info.size}")
+                elif new_raw == bytes(data[region]):
+                    print(f"[UNCHANGED] {label}: no changes")
+                else:
+                    data[region] = new_raw
+                    replaced += 1
+                    print(f"[OK     ] {label}: replaced (ARGB8888)")
+                continue
+
             if not os.path.exists(dds_path):
                 continue
 
